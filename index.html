@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Censo Telecom">
+<title>Censo Telecom</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Supabase SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Leaflet Maps -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <!-- Login Screen -->
+  <div id="screen-login" class="screen active">
+    <div class="login-wrap">
+      <div class="login-logo">📡</div>
+      <h1 class="login-title">Censo Telecom</h1>
+      <p class="login-sub">Levantamento de postes em campo</p>
+      <div class="form-group">
+        <label class="field-label">E-mail</label>
+        <input id="login-email" class="field-input" type="email" placeholder="tecnico@empresa.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="field-label">Senha</label>
+        <input id="login-password" class="field-input" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn-primary" onclick="doLogin()">Entrar</button>
+      <div id="login-error" class="error-msg" style="display:none"></div>
+      <div class="login-footer">v1.0 · Funciona offline</div>
+    </div>
+  </div>
+
+  <!-- App Shell (after login) -->
+  <div id="screen-app" class="screen" style="display:none">
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <div class="status-left">
+        <span id="status-user" class="status-user"></span>
+        <div class="sync-badge" id="syncBadge">
+          <div class="sync-dot" id="syncDot"></div>
+          <span id="syncText">verificando...</span>
+        </div>
+      </div>
+      <div class="status-right">
+        <span id="status-time" class="status-time"></span>
+      </div>
+    </div>
+
+    <!-- Pages -->
+    <div id="page-dashboard" class="page active"></div>
+    <div id="page-novo-poste" class="page"></div>
+    <div id="page-mapa" class="page"></div>
+    <div id="page-exportar" class="page"></div>
+    <div id="page-gestor" class="page"></div>
+
+    <!-- Bottom Nav -->
+    <nav class="bottom-nav">
+      <div class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
+        <span class="nav-icon">🏠</span>
+        <span>Início</span>
+      </div>
+      <div class="nav-item" id="nav-mapa" onclick="showPage('mapa')">
+        <span class="nav-icon">🗺️</span>
+        <span>Mapa</span>
+      </div>
+      <div class="nav-item nav-center" id="nav-novo-poste" onclick="showPage('novo-poste')">
+        <span class="nav-icon">➕</span>
+        <span>Novo</span>
+        <div class="nav-badge" id="queueBadge" style="display:none">0</div>
+      </div>
+      <div class="nav-item" id="nav-exportar" onclick="showPage('exportar')">
+        <span class="nav-icon">📤</span>
+        <span>Exportar</span>
+      </div>
+      <div class="nav-item" id="nav-gestor" onclick="showPage('gestor')">
+        <span class="nav-icon">👔</span>
+        <span>Gestor</span>
+      </div>
+    </nav>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal-box" id="modal-content"></div>
+</div>
+
+<script src="db.js"></script>
+<script src="sync.js"></script>
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
