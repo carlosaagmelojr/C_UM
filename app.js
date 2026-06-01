@@ -14,20 +14,23 @@ let currentProvedores = [];
 // INICIALIZAÇÃO
 // ============================================================
 async function init() {
-  await initDB();
+  // Mostra login imediatamente enquanto carrega
+  showLoginScreen();
 
-  // Verifica sessão existente (modo demo se não há Supabase configurado)
+  try {
+    await initDB();
+  } catch(e) {
+    console.warn('IndexedDB erro:', e);
+  }
+
+  // Verifica sessão existente
   try {
     const user = await Auth.getSession();
     if (user) {
       startApp(user);
-    } else {
-      showLoginScreen();
     }
-  } catch {
-    // Supabase não configurado — entra em modo demo
-    Auth.user = { email: 'demo@empresa.com', user_metadata: { nome: 'Técnico Demo' } };
-    startApp(Auth.user);
+  } catch(e) {
+    console.warn('Sessão não encontrada:', e);
   }
 
   // Atualiza relógio
