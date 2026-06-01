@@ -5,10 +5,10 @@
 const SUPABASE_URL = 'https://zxvcfwpwuglyqagkewn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmtjZndwd3VnbHlxYWdrZXduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwMDkyMTQsImV4cCI6MjA5NTU4NTIxNH0.k_gNnBqgvrFTQ4cHvsaIjh_wgTG4M8B50XWJkebK4S0';
 
-let supabase = null;
+let supabaseClient = null;
 try {
   if (window.supabase && window.supabase.createClient) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 } catch(e) {
   console.warn('Supabase nao inicializado:', e);
@@ -186,26 +186,26 @@ const Auth = {
   user: null,
 
   async login(email, password) {
-    if (!supabase) {
+    if (!supabaseClient) {
       // Modo demo sem Supabase
       this.user = { email, user_metadata: { nome: email.split('@')[0] } };
       return this.user;
     }
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) throw error;
     this.user = data.user;
     return data.user;
   },
 
   async logout() {
-    if (supabase) await supabase.auth.signOut().catch(()=>{});
+    if (supabaseClient) await supabaseClient.auth.signOut().catch(()=>{});
     this.user = null;
   },
 
   async getSession() {
-    if (!supabase) return null;
+    if (!supabaseClient) return null;
     try {
-      const { data } = await supabase.auth.getSession();
+      const { data } = await supabaseClient.auth.getSession();
       this.user = data.session?.user || null;
       return this.user;
     } catch { return null; }
