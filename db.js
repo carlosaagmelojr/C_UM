@@ -5,9 +5,10 @@
 // ---- CONFIGURAÇÃO SUPABASE ----
 // Substitua pelos seus valores do projeto Supabase
 const SUPABASE_URL = 'https://zxvcfwpwuglyqagkewn.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_nLlTnn1aYlkmDnUlFqyBFA_RxTihBC4';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmtjZndwd3VnbHlxYWdrZXduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwMDkyMTQsImV4cCI6MjA5NTU4NTIxNH0.k_gNnBqgvrFTQ4cHvsaIjh_wgTG4M8B50XWJkebK4S0';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let supabase = null;
+try { supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) { console.warn('Supabase offline'); }
 
 // ---- INDEXEDDB (armazenamento offline) ----
 const DB_NAME = 'censo_telecom';
@@ -222,6 +223,7 @@ const Auth = {
   user: null,
 
   async login(email, password) {
+    if (!supabase) throw new Error('Sem conexão com servidor');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     this.user = data.user;
@@ -229,14 +231,19 @@ const Auth = {
   },
 
   async logout() {
-    await supabase.auth.signOut();
+    if (supabase) await supabase.auth.signOut().catch(()=>{});
     this.user = null;
   },
 
   async getSession() {
-    const { data } = await supabase.auth.getSession();
-    this.user = data.session?.user || null;
-    return this.user;
+    if (!supabase) return null;
+    try {
+      const { data } = await supabase.auth.getSession();
+      this.user = data.session?.user || null;
+      return this.user;
+    } catch {
+      return null;
+    }
   },
 
   getName() {
