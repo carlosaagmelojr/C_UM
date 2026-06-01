@@ -11,7 +11,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 #app{height:100%;display:flex;flex-direction:column}
 
 /* ---- SCREENS ---- */
-.screen{position:fixed;inset:0;background:var(--bg);z-index:10;overflow:hidden}
+.screen{position:fixed;inset:0;background:var(--bg);z-index:10;overflow:hidden;display:none}
+.screen.active{display:flex;flex-direction:column}
 .screen.active{display:flex;flex-direction:column}
 
 /* ---- LOGIN ---- */
