@@ -69,12 +69,19 @@ async function doLogin() {
     const user = await Auth.login(email, password);
     startApp(user);
   } catch (err) {
-    // Fallback demo
-    if (SUPABASE_URL.includes('SEU_PROJETO')) {
+    const msg = err.message || '';
+    // Sem conexão com Supabase — entra em modo offline local
+    if (msg.includes('fetch') || msg.includes('network') || msg.includes('ERR_') || msg.includes('Failed')) {
       Auth.user = { email, user_metadata: { nome: email.split('@')[0] } };
       startApp(Auth.user);
+      showToast('Modo offline ativo — dados salvos localmente', 'warning');
+    } else if (msg.includes('Invalid') || msg.includes('invalid') || msg.includes('credentials') || msg.includes('password')) {
+      showLoginError('E-mail ou senha incorretos');
     } else {
-      showLoginError(err.message || 'Credenciais inválidas');
+      // Qualquer outro erro — entra offline
+      Auth.user = { email, user_metadata: { nome: email.split('@')[0] } };
+      startApp(Auth.user);
+      showToast('Entrando em modo offline', 'warning');
     }
   } finally {
     btn.textContent = 'Entrar';
