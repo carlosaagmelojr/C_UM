@@ -1,877 +1,238 @@
-// ============================================================
-// app.js — Lógica principal do app
-// ============================================================
-
-let currentPage = 'dashboard';
-let mapInstance = null;
-let mapMarkers = [];
-let gpsWatcher = null;
-let currentGPS = null;
-let pendingDuplicate = null;
-let currentProvedores = [];
-
-// ============================================================
-// INICIALIZAÇÃO
-// ============================================================
-async function init() {
-  await initDB();
-
-  // Verifica sessão existente (modo demo se não há Supabase configurado)
-  try {
-    const user = await Auth.getSession();
-    if (user) {
-      startApp(user);
-    } else {
-      showLoginScreen();
-    }
-  } catch {
-    // Supabase não configurado — entra em modo demo
-    Auth.user = { email: 'demo@empresa.com', user_metadata: { nome: 'Técnico Demo' } };
-    startApp(Auth.user);
-  }
-
-  // Atualiza relógio
-  setInterval(() => {
-    const el = document.getElementById('status-time');
-    if (el) el.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  }, 1000);
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0f1117;--bg2:#161a24;--bg3:#1d2233;--bg4:#242840;
+  --accent:#3b82f6;--accent2:#22d3ee;--warn:#f59e0b;--danger:#ef4444;--ok:#22c55e;
+  --text:#f0f4ff;--text2:#8b95b0;--text3:#4a5568;
+  --border:#2a3050;--border2:#3a4060;
+  --font:'DM Sans',system-ui,sans-serif;--mono:'DM Mono',monospace;
+  --radius:12px;--radius-sm:8px;
 }
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px}
+#app{height:100%;display:flex;flex-direction:column}
 
-function showLoginScreen() {
-  document.getElementById('screen-login').classList.add('active');
-  document.getElementById('screen-app').style.display = 'none';
+/* ---- SCREENS ---- */
+.screen{position:fixed;inset:0;background:var(--bg);z-index:10;overflow:hidden}
+.screen.active{display:flex;flex-direction:column}
+
+/* ---- LOGIN ---- */
+.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:12px}
+.login-logo{font-size:52px;margin-bottom:4px}
+.login-title{font-size:26px;font-weight:600;letter-spacing:-.5px}
+.login-sub{font-size:14px;color:var(--text2);margin-bottom:12px}
+.login-footer{font-size:11px;color:var(--text3);margin-top:16px}
+.form-group{width:100%;max-width:360px}
+.error-msg{color:var(--danger);font-size:13px;text-align:center;padding:8px}
+
+/* ---- APP SHELL ---- */
+#screen-app{display:flex!important;flex-direction:column;height:100%}
+
+/* ---- STATUS BAR ---- */
+.status-bar{background:var(--bg2);display:flex;justify-content:space-between;align-items:center;padding:10px 14px 8px;border-bottom:1px solid var(--border);flex-shrink:0;z-index:20}
+.status-left{display:flex;align-items:center;gap:8px}
+.status-user{font-size:12px;font-weight:600;color:var(--text2)}
+.status-time{font-size:12px;font-family:var(--mono);color:var(--text3)}
+.sync-badge{display:flex;align-items:center;gap:5px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:20px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--warn);transition:all .4s}
+.sync-badge.online{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3);color:var(--ok)}
+.sync-badge.syncing{background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3);color:var(--accent)}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.sync-dot.pulse{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ---- PAGES ---- */
+.page{display:none;flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:70px}
+.page.active{display:block}
+.page::-webkit-scrollbar{width:2px}
+.page::-webkit-scrollbar-thumb{background:var(--border2)}
+
+/* ---- BOTTOM NAV ---- */
+.bottom-nav{display:flex;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0;z-index:20;padding:6px 0 env(safe-area-inset-bottom,0)}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--text3);font-size:10px;padding:6px 0;position:relative;transition:color .2s}
+.nav-item.active{color:var(--accent)}
+.nav-icon{font-size:20px;line-height:1}
+.nav-center .nav-icon{font-size:24px}
+.nav-badge{position:absolute;top:4px;right:calc(50% - 18px);background:var(--warn);color:#000;border-radius:10px;font-size:9px;font-weight:700;padding:1px 5px;min-width:16px;text-align:center}
+
+/* ---- SHARED COMPONENTS ---- */
+.page-header{background:var(--bg2);padding:14px 16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5}
+.page-header h2{font-size:17px;font-weight:600}
+.page-content{padding:14px 14px 0}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+.card-title{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-bottom:10px}
+.section-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin:14px 0 8px}
+
+/* FORM */
+.field-label{display:block;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px}
+.field-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;color:var(--text);font-family:var(--font);font-size:14px;outline:none;transition:border-color .2s;-webkit-appearance:none;appearance:none}
+.field-input:focus{border-color:var(--accent)}
+.field-input::placeholder{color:var(--text3)}
+.field-input[readonly]{color:var(--text2);cursor:default}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.form-group{margin-bottom:12px}
+
+/* BUTTONS */
+.btn-primary{width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:14px;font-family:var(--font);font-size:15px;font-weight:600;cursor:pointer;transition:opacity .2s;max-width:360px}
+.btn-primary:hover{opacity:.88}
+.btn-primary:active{opacity:.75;transform:scale(.99)}
+.btn-secondary{width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-family:var(--font);font-size:14px;font-weight:500;cursor:pointer;transition:.2s;margin-bottom:8px}
+.btn-secondary:hover{background:var(--bg4)}
+.btn-icon{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:.2s;flex-shrink:0}
+.btn-icon:hover{background:var(--bg4)}
+.btn-sm{background:rgba(59,130,246,.12);color:var(--accent);border:1px solid rgba(59,130,246,.25);border-radius:var(--radius-sm);padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);white-space:nowrap}
+
+/* STAT GRID */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:13px}
+.stat-val{font-size:28px;font-weight:600;line-height:1;font-family:var(--mono)}
+.stat-lbl{font-size:11px;color:var(--text2);margin-top:4px}
+.stat-delta{font-size:11px;margin-top:4px;color:var(--text3)}
+.stat-delta.up{color:var(--ok)}
+.stat-delta.warn{color:var(--warn)}
+
+/* SYNC PANEL */
+.sync-panel{border-radius:var(--radius);padding:14px;margin-bottom:12px;border:1px solid}
+.sync-panel.offline{background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.25)}
+.sync-panel.online{background:rgba(34,197,94,.06);border-color:rgba(34,197,94,.2)}
+.sync-panel.syncing{background:rgba(59,130,246,.07);border-color:rgba(59,130,246,.25)}
+.sync-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sync-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
+.sync-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sync-status-dot.offline{background:var(--warn);animation:pulse 1.4s infinite}
+.sync-status-dot.online{background:var(--ok)}
+.sync-status-dot.syncing{background:var(--accent);animation:pulse .8s infinite}
+.queue-list{display:flex;flex-direction:column;gap:6px}
+.queue-item{background:var(--bg3);border-radius:var(--radius-sm);padding:9px 11px;display:flex;align-items:center;justify-content:space-between;font-size:12px}
+.queue-type{font-size:10px;font-weight:700;font-family:var(--mono);padding:2px 6px;border-radius:4px;margin-right:8px}
+.queue-type.poste{background:rgba(59,130,246,.15);color:var(--accent)}
+.queue-type.foto{background:rgba(168,85,247,.15);color:#a855f7}
+.queue-type.prov{background:rgba(34,211,238,.12);color:var(--accent2)}
+.queue-status{font-size:10px;display:flex;align-items:center;gap:4px;color:var(--text2)}
+.progress-bar{background:var(--bg3);border-radius:6px;height:4px;margin-top:10px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:6px;transition:width .5s ease;width:0%}
+
+/* ALERT */
+.alert{border-radius:var(--radius);padding:13px;margin-bottom:12px;border:1px solid;animation:slideDown .35s ease}
+@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+.alert.danger{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3)}
+.alert.warning{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.3)}
+.alert.success{background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.3)}
+.alert-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.alert-icon{width:34px;height:34px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.alert.danger .alert-icon{background:rgba(239,68,68,.18)}
+.alert-title{font-size:13px;font-weight:600}
+.alert.danger .alert-title{color:var(--danger)}
+.alert-sub{font-size:11px;color:var(--text2);margin-top:1px}
+.alert-body{background:var(--bg3);border-radius:var(--radius-sm);padding:10px;font-size:12px;margin-bottom:10px}
+.alert-row{display:flex;justify-content:space-between;padding:3px 0}
+.alert-key{color:var(--text2)}
+.alert-val{font-family:var(--mono)}
+.alert-actions{display:flex;gap:8px}
+.alert-btn{flex:1;padding:9px;border-radius:var(--radius-sm);border:none;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:.2s}
+.alert-btn.primary{background:rgba(59,130,246,.15);color:var(--accent);border:1px solid rgba(59,130,246,.3)}
+.alert-btn.ghost{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
+
+/* PROVEDOR */
+.prov-item{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.prov-name{font-size:13px;font-weight:500}
+.prov-meta{font-size:10px;color:var(--text2);margin-top:2px}
+.prov-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:2px 4px;transition:color .2s}
+.prov-remove:hover{color:var(--danger)}
+.prov-badge{font-size:10px;font-family:var(--mono);background:rgba(245,158,11,.12);color:var(--warn);border-radius:4px;padding:2px 6px;border:1px solid rgba(245,158,11,.2)}
+.prov-badge.synced{background:rgba(34,197,94,.12);color:var(--ok);border-color:rgba(34,197,94,.2)}
+
+/* MAP */
+#map-container{height:calc(100vh - 140px)}
+.map-fab{position:absolute;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(59,130,246,.4);z-index:100;transition:.2s}
+.map-fab:hover{transform:scale(1.08)}
+
+/* EXPORT */
+.export-channel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:8px}
+.export-channel-header{padding:13px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;transition:background .2s}
+.export-channel-header:hover{background:var(--bg3)}
+.export-ch-icon{width:38px;height:38px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.export-channel-body{padding:12px 14px 14px;border-top:1px solid var(--border);display:none}
+.export-channel-body.open{display:block}
+.export-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.export-row:last-child{margin-bottom:0}
+.export-label{font-size:13px}
+.history-item{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.history-item:last-child{border-bottom:none}
+
+/* TOGGLE */
+.toggle{position:relative;width:42px;height:24px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;background:var(--bg4);border:1px solid var(--border2);border-radius:12px;transition:.3s;cursor:pointer}
+.toggle-track:before{content:'';position:absolute;width:18px;height:18px;left:2px;top:2px;background:var(--text3);border-radius:50%;transition:.3s}
+.toggle input:checked~.toggle-track{background:rgba(34,197,94,.2);border-color:rgba(34,197,94,.5)}
+.toggle input:checked~.toggle-track:before{background:var(--ok);transform:translateX(18px)}
+
+/* TIME SELECT */
+.time-select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;cursor:pointer}
+
+/* GESTOR */
+.team-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.team-row:last-child{border-bottom:none}
+.team-avatar{width:36px;height:36px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--accent);flex-shrink:0}
+.team-name{font-size:13px;font-weight:500}
+.team-meta{font-size:11px;color:var(--text2);margin-top:1px}
+.team-count{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--ok);margin-left:auto}
+
+/* TOAST */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:11px 18px;font-size:13px;font-weight:500;opacity:0;transition:all .3s;pointer-events:none;z-index:999;white-space:nowrap;display:flex;align-items:center;gap:8px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.success{border-color:rgba(34,197,94,.4);color:var(--ok)}
+.toast.warning{border-color:rgba(245,158,11,.4);color:var(--warn)}
+.toast.error{border-color:rgba(239,68,68,.4);color:var(--danger)}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;display:flex;align-items:flex-end;justify-content:center}
+.modal-box{background:var(--bg2);border-radius:20px 20px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px 18px 32px}
+
+/* DIVIDER */
+.divider{height:1px;background:var(--border);margin:12px 0}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:11px;color:var(--text2)}
+
+/* GEO TAG */
+.geo-display{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;display:flex;align-items:center;gap:10px}
+.geo-coords{font-family:var(--mono);font-size:12px;color:var(--accent)}
+.geo-status{margin-left:auto;font-size:11px;font-weight:600}
+
+/* LOADING */
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text2);font-size:14px;gap:10px}
+.spinner{width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* EMPTY STATE */
+.empty-state{text-align:center;padding:40px 24px;color:var(--text2)}
+.empty-icon{font-size:40px;margin-bottom:12px}
+.empty-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px}
+.empty-sub{font-size:13px}
+
+/* BADGE */
+.badge{display:inline-block;font-size:10px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:4px}
+.badge.ok{background:rgba(34,197,94,.12);color:var(--ok);border:1px solid rgba(34,197,94,.2)}
+.badge.warn{background:rgba(245,158,11,.12);color:var(--warn);border:1px solid rgba(245,158,11,.2)}
+.badge.info{background:rgba(59,130,246,.12);color:var(--accent);border:1px solid rgba(59,130,246,.2)}
+.badge.danger{background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.2)}
+
+/* RADAR */
+.radar-wrap{display:flex;flex-direction:column;align-items:center;padding:10px 0}
+.radar{width:110px;height:110px;position:relative;border-radius:50%;border:1.5px solid rgba(59,130,246,.3)}
+.radar-ring{position:absolute;border:1px solid rgba(59,130,246,.12);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%)}
+.radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(59,130,246,.2) 0deg, transparent 60deg, transparent 360deg);animation:sweep 2.5s linear infinite}
+@keyframes sweep{to{transform:rotate(360deg)}}
+.radar-center{position:absolute;top:50%;left:50%;width:6px;height:6px;background:var(--accent);border-radius:50%;transform:translate(-50%,-50%)}
+.radar-blip{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--danger);transform:translate(-50%,-50%);animation:blip 1.2s ease-in-out infinite}
+@keyframes blip{0%,100%{opacity:1;transform:translate(-50%,-50%) scale(1)}50%{opacity:.5;transform:translate(-50%,-50%) scale(1.6)}}
+
+/* POSTE LIST */
+.poste-item{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:13px;margin-bottom:8px;cursor:pointer;transition:.2s}
+.poste-item:hover{background:var(--bg3);border-color:var(--border2)}
+.poste-item-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.poste-id{font-size:14px;font-weight:600;font-family:var(--mono);color:var(--accent2)}
+.poste-end{font-size:11px;color:var(--text2)}
+.poste-addr{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@media(min-width:480px){
+  .bottom-nav,.status-bar,#screen-app{max-width:480px;margin:0 auto}
+  #screen-app{border-left:1px solid var(--border);border-right:1px solid var(--border)}
 }
-
-function startApp(user) {
-  document.getElementById('screen-login').style.display = 'none';
-  document.getElementById('screen-app').style.display = 'flex';
-  document.getElementById('status-user').textContent = Auth.getName();
-  Sync.init();
-  renderDashboard();
-}
-
-async function doLogin() {
-  const email = document.getElementById('login-email').value.trim();
-  const password = document.getElementById('login-password').value;
-  const errEl = document.getElementById('login-error');
-  const btn = document.querySelector('#screen-login .btn-primary');
-
-  if (!email || !password) { showLoginError('Preencha e-mail e senha'); return; }
-
-  btn.textContent = 'Entrando...';
-  btn.disabled = true;
-  errEl.style.display = 'none';
-
-  try {
-    const user = await Auth.login(email, password);
-    startApp(user);
-  } catch (err) {
-    // Fallback demo
-    if (SUPABASE_URL.includes('SEU_PROJETO')) {
-      Auth.user = { email, user_metadata: { nome: email.split('@')[0] } };
-      startApp(Auth.user);
-    } else {
-      showLoginError(err.message || 'Credenciais inválidas');
-    }
-  } finally {
-    btn.textContent = 'Entrar';
-    btn.disabled = false;
-  }
-}
-
-function showLoginError(msg) {
-  const el = document.getElementById('login-error');
-  el.textContent = msg;
-  el.style.display = 'block';
-}
-
-// ============================================================
-// NAVEGAÇÃO
-// ============================================================
-function showPage(name) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + name).classList.add('active');
-  document.getElementById('nav-' + name).classList.add('active');
-  currentPage = name;
-
-  if (name === 'dashboard') renderDashboard();
-  else if (name === 'novo-poste') renderNovoPoste();
-  else if (name === 'mapa') renderMapa();
-  else if (name === 'exportar') renderExportar();
-  else if (name === 'gestor') renderGestor();
-}
-
-// ============================================================
-// TOAST
-// ============================================================
-function showToast(msg, type = 'success') {
-  const t = document.getElementById('toast');
-  const icons = { success: '✅', warning: '⚠️', error: '❌' };
-  t.innerHTML = (icons[type] || '') + ' ' + msg;
-  t.className = 'toast show ' + type;
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.classList.remove('show'), 3200);
-}
-
-// ============================================================
-// DASHBOARD
-// ============================================================
-async function renderDashboard() {
-  const page = document.getElementById('page-dashboard');
-  const postes = await PosteDB.getAll();
-  const provedores = await dbGetAll('provedores');
-  const pendentes = await SyncQueue.count();
-  const municipios = [...new Set(postes.map(p => p.municipio).filter(Boolean))];
-  const hoje = new Date().toDateString();
-  const hoje_count = postes.filter(p => new Date(p.created_at).toDateString() === hoje).length;
-
-  // Agrupamento por provedor
-  const provNomes = [...new Set(provedores.map(p => p.nome).filter(Boolean))];
-
-  page.innerHTML = `
-    <div class="page-header">
-      <h2>📡 Censo Telecom</h2>
-      <div style="display:flex;gap:6px">
-        <div class="btn-icon" onclick="Sync.syncAll()" title="Sincronizar agora">🔄</div>
-        <div class="btn-icon" onclick="doLogout()" title="Sair">🚪</div>
-      </div>
-    </div>
-    <div class="page-content">
-      <div id="sync-panel-container"></div>
-
-      <p class="section-label">Resumo geral</p>
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="stat-val" style="color:var(--accent)">${postes.length}</div>
-          <div class="stat-lbl">Postes levantados</div>
-          <div class="stat-delta up">▲ +${hoje_count} hoje</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-val" style="color:var(--accent2)">${provNomes.length}</div>
-          <div class="stat-lbl">Provedores únicos</div>
-          <div class="stat-delta">${provedores.length} ocupações</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-val" style="color:var(--ok)">${municipios.length}</div>
-          <div class="stat-lbl">Municípios</div>
-          <div class="stat-delta">${municipios.slice(0,2).join(', ') || '—'}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-val" style="color:${pendentes > 0 ? 'var(--warn)' : 'var(--ok)'}">${pendentes}</div>
-          <div class="stat-lbl">Fila de sync</div>
-          <div class="stat-delta ${pendentes > 0 ? 'warn' : 'up'}">${pendentes > 0 ? '⚠ offline' : '✓ tudo ok'}</div>
-        </div>
-      </div>
-
-      <p class="section-label">Últimos levantamentos</p>
-      ${postes.length === 0 ? `
-        <div class="empty-state">
-          <div class="empty-icon">📍</div>
-          <div class="empty-title">Nenhum poste cadastrado</div>
-          <div class="empty-sub">Toque em "Novo" para começar o levantamento</div>
-        </div>` : postes.slice().reverse().slice(0, 8).map(p => `
-        <div class="poste-item" onclick="verPoste('${p.id}')">
-          <div class="poste-item-header">
-            <span class="poste-id">${p.barramento || 'S/N'}</span>
-            <span class="badge ${p.synced ? 'ok' : 'warn'}">${p.synced ? 'SYNC' : 'PENDENTE'}</span>
-          </div>
-          <div class="poste-addr">📍 ${p.logradouro || 'Sem endereço'} · ${p.municipio || '—'}</div>
-          <div class="poste-end">${formatDate(p.created_at)}</div>
-        </div>`).join('')
-      }
-
-      <div style="height:10px"></div>
-      <button class="btn-primary" onclick="showPage('novo-poste')">➕ Novo Levantamento</button>
-      <div style="height:16px"></div>
-    </div>`;
-
-  renderSyncPanel('sync-panel-container');
-}
-
-async function renderSyncPanel(containerId) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  const queue = await SyncQueue.getAll();
-  if (queue.length === 0) { container.innerHTML = ''; return; }
-
-  const isOnline = Sync.isOnline;
-  container.innerHTML = `
-    <div class="sync-panel ${isOnline ? 'online' : 'offline'}" style="margin-top:14px">
-      <div class="sync-header">
-        <div class="sync-title">
-          <div class="sync-status-dot ${isOnline ? 'online' : 'offline'}"></div>
-          ${isOnline ? `Online — ${queue.length} aguardando sync` : `Offline — ${queue.length} na fila`}
-        </div>
-        <button class="btn-sm" onclick="Sync.syncAll()" ${isOnline ? '' : 'disabled'}>
-          ${isOnline ? 'Enviar agora' : 'Aguardando...'}
-        </button>
-      </div>
-      <div class="queue-list">
-        ${queue.slice(0, 4).map(item => `
-          <div class="queue-item">
-            <div style="display:flex;align-items:center">
-              <span class="queue-type ${item.tipo}">${item.tipo.toUpperCase()}</span>
-              <span>${item.dados?.barramento || item.dados?.nome || item.ref_id?.slice(0,12)}</span>
-            </div>
-            <div class="queue-status">
-              <div style="width:5px;height:5px;border-radius:50%;background:var(--warn)"></div>
-              pendente
-            </div>
-          </div>`).join('')}
-        ${queue.length > 4 ? `<div style="font-size:11px;color:var(--text2);text-align:center;padding:4px">+${queue.length - 4} mais...</div>` : ''}
-      </div>
-      <div class="progress-bar"><div class="progress-fill" id="syncProgress"></div></div>
-    </div>`;
-
-  Sync.onChange(({ syncing, count }) => {
-    const fill = document.getElementById('syncProgress');
-    if (fill) fill.style.width = syncing ? '60%' : (count === 0 ? '100%' : '0%');
-    if (count === 0) setTimeout(() => { if (container) renderSyncPanel(containerId); }, 600);
-  });
-}
-
-// ============================================================
-// NOVO POSTE
-// ============================================================
-async function renderNovoPoste() {
-  const page = document.getElementById('page-novo-poste');
-  currentGPS = null;
-  currentProvedores = [];
-  pendingDuplicate = null;
-
-  page.innerHTML = `
-    <div class="page-header">
-      <button class="btn-sm" onclick="showPage('dashboard')" style="background:transparent;border:none;color:var(--text2);font-size:13px;cursor:pointer;padding:0">← Voltar</button>
-      <h2>Novo Poste</h2>
-      <div style="width:50px"></div>
-    </div>
-    <div class="page-content">
-      <div id="dup-alert-container"></div>
-
-      <div class="card">
-        <div class="card-title">📍 Geolocalização</div>
-        <div class="geo-display" id="geo-display">
-          <span style="font-size:20px">📡</span>
-          <div>
-            <div style="font-size:13px;font-weight:500">Aguardando GPS...</div>
-            <div style="font-size:11px;color:var(--text2)" id="geo-accuracy"></div>
-          </div>
-          <button class="btn-sm" style="margin-left:auto" onclick="captureGPS()">Capturar</button>
-        </div>
-        <div id="geo-details" style="margin-top:10px;display:none">
-          <div class="field-row" style="margin-top:6px">
-            <div class="form-group"><label class="field-label">Logradouro</label>
-              <input class="field-input" id="f-logradouro" type="text" placeholder="Rua..."></div>
-            <div class="form-group"><label class="field-label">Bairro</label>
-              <input class="field-input" id="f-bairro" type="text" placeholder="Bairro"></div>
-          </div>
-          <div class="field-row">
-            <div class="form-group"><label class="field-label">Município</label>
-              <input class="field-input" id="f-municipio" type="text"></div>
-            <div class="form-group"><label class="field-label">CEP</label>
-              <input class="field-input" id="f-cep" type="text" placeholder="00000-000"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">🔩 Dados do Poste</div>
-        <div class="form-group">
-          <label class="field-label">Barramento / ID do Poste</label>
-          <input class="field-input" id="f-barramento" type="text" placeholder="Ex: A3, PE-0482, Barramento-7...">
-        </div>
-        <div class="form-group">
-          <label class="field-label">Observações</label>
-          <textarea class="field-input" id="f-obs" rows="2" placeholder="Estado do poste, ocorrências..." style="resize:none"></textarea>
-        </div>
-      </div>
-
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <span class="card-title">🏢 Provedores Ocupantes</span>
-          <button class="btn-sm" onclick="openAddProv()">+ Adicionar</button>
-        </div>
-        <div id="prov-list">
-          <div style="font-size:12px;color:var(--text2);text-align:center;padding:12px 0">Nenhum provedor adicionado</div>
-        </div>
-      </div>
-
-      <div style="height:6px"></div>
-      <button class="btn-primary" onclick="salvarPoste()">💾 Salvar na Fila Offline</button>
-      <div style="height:16px"></div>
-    </div>`;
-
-  // Auto-captura GPS ao abrir
-  setTimeout(captureGPS, 400);
-}
-
-async function captureGPS() {
-  const display = document.getElementById('geo-display');
-  const details = document.getElementById('geo-details');
-  if (!display) return;
-
-  display.innerHTML = `<span class="spinner"></span><div style="font-size:13px;color:var(--text2)">Capturando GPS...</div>`;
-
-  try {
-    const gps = await getGPS();
-    currentGPS = gps;
-
-    // Verifica duplicatas
-    const dup = await PosteDB.checkDuplicate(gps.lat, gps.lng, 5);
-    if (dup) {
-      renderDupAlert(dup);
-    }
-
-    // Endereço reverso
-    const geo = await reverseGeocode(gps.lat, gps.lng);
-
-    display.innerHTML = `
-      <span style="font-size:20px">✅</span>
-      <div>
-        <div class="geo-coords">${gps.lat.toFixed(6)}°, ${gps.lng.toFixed(6)}°</div>
-        <div style="font-size:11px;color:var(--text2)">Precisão: ±${Math.round(gps.accuracy)}m</div>
-      </div>
-      <button class="btn-sm" style="margin-left:auto;font-size:10px" onclick="captureGPS()">🔄</button>`;
-
-    if (details) {
-      details.style.display = '';
-      document.getElementById('f-logradouro').value = geo.logradouro;
-      document.getElementById('f-bairro').value = geo.bairro;
-      document.getElementById('f-municipio').value = geo.municipio;
-      document.getElementById('f-cep').value = geo.cep;
-    }
-  } catch (err) {
-    display.innerHTML = `
-      <span style="font-size:20px">⚠️</span>
-      <div>
-        <div style="font-size:13px;color:var(--warn)">GPS indisponível</div>
-        <div style="font-size:11px;color:var(--text2)">Insira coordenadas manualmente</div>
-      </div>
-      <button class="btn-sm" style="margin-left:auto" onclick="captureGPS()">Tentar</button>`;
-
-    // Mostra campos manuais mesmo sem GPS
-    if (details) details.style.display = '';
-  }
-}
-
-function renderDupAlert(dup) {
-  const container = document.getElementById('dup-alert-container');
-  if (!container) return;
-  pendingDuplicate = dup;
-
-  container.innerHTML = `
-    <div class="alert danger">
-      <div class="alert-header">
-        <div class="alert-icon">⚠️</div>
-        <div>
-          <div class="alert-title">Poste duplicado detectado!</div>
-          <div class="alert-sub">GPS encontrou registro a ${dup.distancia}m — raio de alerta: 5m</div>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:center;padding:10px 0">
-        <div class="radar" style="width:100px;height:100px">
-          <div class="radar-ring" style="width:40%;height:40%"></div>
-          <div class="radar-ring" style="width:72%;height:72%"></div>
-          <div class="radar-sweep"></div>
-          <div class="radar-center"></div>
-          <div class="radar-blip" style="top:38%;left:54%"></div>
-        </div>
-      </div>
-      <div class="alert-body">
-        <div class="alert-row"><span class="alert-key">Barramento</span><span class="alert-val">${dup.poste.barramento || '—'}</span></div>
-        <div class="alert-row"><span class="alert-key">Distância</span><span class="alert-val" style="color:var(--danger)">${dup.distancia}m</span></div>
-        <div class="alert-row"><span class="alert-key">Endereço</span><span class="alert-val">${dup.poste.logradouro || '—'}</span></div>
-        <div class="alert-row"><span class="alert-key">Cadastrado em</span><span class="alert-val">${formatDate(dup.poste.created_at)}</span></div>
-      </div>
-      <div class="alert-actions">
-        <button class="alert-btn primary" onclick="verPoste('${dup.poste.id}')">Ver existente</button>
-        <button class="alert-btn ghost" onclick="dismissDup()">Ignorar e continuar</button>
-      </div>
-    </div>`;
-}
-
-function dismissDup() {
-  document.getElementById('dup-alert-container').innerHTML = '';
-  pendingDuplicate = null;
-  showToast('Alerta ignorado. Prossiga com cuidado.', 'warning');
-}
-
-function openAddProv() {
-  document.getElementById('modal-content').innerHTML = `
-    <div style="margin-bottom:16px">
-      <div style="font-size:16px;font-weight:600;margin-bottom:4px">Adicionar Provedor</div>
-      <div style="font-size:12px;color:var(--text2)">Ocupante do poste</div>
-    </div>
-    <div class="form-group">
-      <label class="field-label">Nome do Provedor</label>
-      <input class="field-input" id="modal-prov-nome" type="text" placeholder="Ex: Vivo Fibra, Claro NET, Brisanet...">
-    </div>
-    <div class="form-group">
-      <label class="field-label">Tipo de Cabo</label>
-      <select class="field-input" id="modal-prov-tipo">
-        <option value="">Selecione...</option>
-        <option>Fibra óptica</option>
-        <option>Coaxial</option>
-        <option>Metálico</option>
-        <option>ADSS</option>
-        <option>Drop</option>
-      </select>
-    </div>
-    <div style="height:6px"></div>
-    <button class="btn-primary" onclick="confirmAddProv()">Confirmar</button>
-    <button class="btn-secondary" style="margin-top:8px" onclick="closeModal()">Cancelar</button>`;
-  document.getElementById('modal').style.display = 'flex';
-  setTimeout(() => document.getElementById('modal-prov-nome')?.focus(), 100);
-}
-
-function confirmAddProv() {
-  const nome = document.getElementById('modal-prov-nome').value.trim();
-  const tipo = document.getElementById('modal-prov-tipo').value;
-  if (!nome) { showToast('Digite o nome do provedor', 'warning'); return; }
-  currentProvedores.push({ nome, tipo });
-  closeModal();
-  renderProvList();
-  showToast(nome + ' adicionado!', 'success');
-}
-
-function renderProvList() {
-  const list = document.getElementById('prov-list');
-  if (!list) return;
-  if (currentProvedores.length === 0) {
-    list.innerHTML = '<div style="font-size:12px;color:var(--text2);text-align:center;padding:12px 0">Nenhum provedor adicionado</div>';
-    return;
-  }
-  list.innerHTML = currentProvedores.map((p, i) => `
-    <div class="prov-item">
-      <div>
-        <div class="prov-name">${p.nome}</div>
-        <div class="prov-meta">${p.tipo || 'Tipo não informado'}</div>
-      </div>
-      <button class="prov-remove" onclick="removeProv(${i})">✕</button>
-    </div>`).join('');
-}
-
-function removeProv(idx) {
-  currentProvedores.splice(idx, 1);
-  renderProvList();
-}
-
-async function salvarPoste() {
-  if (!currentGPS) {
-    showToast('Capture a localização GPS primeiro', 'warning');
-    return;
-  }
-
-  const poste = {
-    barramento: document.getElementById('f-barramento')?.value.trim(),
-    logradouro: document.getElementById('f-logradouro')?.value.trim(),
-    bairro: document.getElementById('f-bairro')?.value.trim(),
-    municipio: document.getElementById('f-municipio')?.value.trim(),
-    cep: document.getElementById('f-cep')?.value.trim(),
-    observacoes: document.getElementById('f-obs')?.value.trim(),
-    latitude: currentGPS.lat,
-    longitude: currentGPS.lng,
-    gps_accuracy: currentGPS.accuracy
-  };
-
-  const saved = await PosteDB.save(poste);
-
-  // Salva provedores vinculados
-  for (const p of currentProvedores) {
-    await ProvDB.save({ ...p, poste_id: saved.id });
-  }
-
-  await Sync.updateUI();
-  showToast('Poste salvo! Sincroniza quando online.', 'success');
-  setTimeout(() => showPage('dashboard'), 1400);
-}
-
-// ============================================================
-// VER POSTE
-// ============================================================
-async function verPoste(id) {
-  const poste = await PosteDB.getById(id);
-  if (!poste) return;
-  const provs = await ProvDB.getByPoste(id);
-
-  document.getElementById('modal-content').innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div style="font-size:16px;font-weight:600">Poste ${poste.barramento || 'Sem ID'}</div>
-      <span class="badge ${poste.synced ? 'ok' : 'warn'}">${poste.synced ? 'SINCRONIZADO' : 'PENDENTE'}</span>
-    </div>
-    <div class="alert-body" style="margin-bottom:12px">
-      <div class="alert-row"><span class="alert-key">Barramento</span><span class="alert-val">${poste.barramento || '—'}</span></div>
-      <div class="alert-row"><span class="alert-key">Endereço</span><span class="alert-val">${poste.logradouro || '—'}</span></div>
-      <div class="alert-row"><span class="alert-key">Bairro</span><span class="alert-val">${poste.bairro || '—'}</span></div>
-      <div class="alert-row"><span class="alert-key">Município</span><span class="alert-val">${poste.municipio || '—'}</span></div>
-      <div class="alert-row"><span class="alert-key">GPS</span><span class="alert-val" style="color:var(--accent)">${poste.latitude?.toFixed(6) || '—'}, ${poste.longitude?.toFixed(6) || '—'}</span></div>
-      <div class="alert-row"><span class="alert-key">Data</span><span class="alert-val">${formatDate(poste.created_at)}</span></div>
-    </div>
-    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">PROVEDORES (${provs.length})</div>
-    ${provs.length === 0 ? '<div style="font-size:12px;color:var(--text3);padding:6px 0">Nenhum provedor cadastrado</div>' :
-      provs.map(p => `<div class="prov-item" style="margin-bottom:4px"><div><div class="prov-name">${p.nome}</div><div class="prov-meta">${p.tipo || '—'}</div></div></div>`).join('')
-    }
-    <div style="height:10px"></div>
-    <button class="btn-secondary" onclick="closeModal()">Fechar</button>`;
-  document.getElementById('modal').style.display = 'flex';
-}
-
-// ============================================================
-// MAPA
-// ============================================================
-async function renderMapa() {
-  const page = document.getElementById('page-mapa');
-  page.innerHTML = `
-    <div class="page-header">
-      <h2>🗺️ Mapa de Postes</h2>
-      <div class="btn-icon" onclick="centerMap()">🎯</div>
-    </div>
-    <div id="map-container" style="height:calc(100dvh - 135px);z-index:1"></div>
-    <button class="map-fab" onclick="showPage('novo-poste')" style="position:fixed;bottom:75px;right:16px">➕</button>`;
-
-  await new Promise(r => setTimeout(r, 100));
-
-  if (mapInstance) { mapInstance.remove(); mapInstance = null; }
-
-  mapInstance = L.map('map-container', { zoomControl: true }).setView([-8.28, -35.97], 13);
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap',
-    maxZoom: 19
-  }).addTo(mapInstance);
-
-  const postes = await PosteDB.getAll();
-  mapMarkers = [];
-
-  postes.forEach(p => {
-    if (!p.latitude || !p.longitude) return;
-    const color = p.synced ? '#22c55e' : '#f59e0b';
-    const icon = L.divIcon({
-      className: '',
-      html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>`,
-      iconSize: [14, 14], iconAnchor: [7, 7]
-    });
-    const marker = L.marker([p.latitude, p.longitude], { icon }).addTo(mapInstance);
-    marker.bindPopup(`<b>${p.barramento || 'Poste'}</b><br>${p.logradouro || ''}<br><small>${p.municipio || ''}</small>`);
-    mapMarkers.push(marker);
-  });
-
-  if (mapMarkers.length > 0) {
-    const group = L.featureGroup(mapMarkers);
-    mapInstance.fitBounds(group.getBounds().pad(0.2));
-  }
-}
-
-function centerMap() {
-  if (!mapInstance) return;
-  getGPS().then(gps => mapInstance.setView([gps.lat, gps.lng], 16))
-    .catch(() => showToast('GPS indisponível', 'warning'));
-}
-
-// ============================================================
-// EXPORTAR
-// ============================================================
-async function renderExportar() {
-  const page = document.getElementById('page-exportar');
-  const postes = await PosteDB.getAll();
-  const hoje = new Date().toDateString();
-  const hojeCount = postes.filter(p => new Date(p.created_at).toDateString() === hoje).length;
-  const municipios = [...new Set(postes.map(p => p.municipio).filter(Boolean))];
-
-  page.innerHTML = `
-    <div class="page-header"><h2>📤 Exportação</h2></div>
-    <div class="page-content">
-      <div class="card" style="margin-top:14px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <div style="font-size:32px">📊</div>
-          <div>
-            <div style="font-size:15px;font-weight:600">Relatório de hoje</div>
-            <div style="font-size:12px;color:var(--text2)">${new Date().toLocaleDateString('pt-BR')} · ${hojeCount} postes · ${municipios.length} municípios</div>
-          </div>
-        </div>
-        <div class="stat-grid" style="margin-bottom:0">
-          <div class="stat-card" style="padding:10px">
-            <div class="stat-val" style="font-size:22px;color:var(--accent)">${hojeCount}</div>
-            <div class="stat-lbl">Hoje</div>
-          </div>
-          <div class="stat-card" style="padding:10px">
-            <div class="stat-val" style="font-size:22px;color:var(--ok)">${postes.length}</div>
-            <div class="stat-lbl">Total</div>
-          </div>
-        </div>
-      </div>
-
-      <p class="section-label">Canais de envio automático</p>
-
-      <!-- WHATSAPP -->
-      <div class="export-channel">
-        <div class="export-channel-header" onclick="toggleChannel('wa')">
-          <div class="export-ch-icon" style="background:rgba(37,211,102,.12)">📱</div>
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:600">WhatsApp</div>
-            <div style="font-size:11px;color:var(--text2)">Envio automático ao grupo</div>
-          </div>
-          <span id="wa-arrow" style="color:var(--text2);transition:.2s;font-size:12px">▾</span>
-        </div>
-        <div class="export-channel-body" id="wa-body">
-          <div class="export-row">
-            <span class="export-label">Ativar envio automático</span>
-            <label class="toggle"><input type="checkbox" checked id="wa-auto"><div class="toggle-track"></div></label>
-          </div>
-          <div class="export-row">
-            <span class="export-label">Horário</span>
-            <select class="time-select" id="wa-hora"><option>18:00</option><option>20:00</option><option>22:00</option><option>23:59</option></select>
-          </div>
-          <div class="export-row">
-            <span class="export-label">Incluir mapa KML</span>
-            <label class="toggle"><input type="checkbox"><div class="toggle-track"></div></label>
-          </div>
-          <div class="divider"></div>
-          <div class="form-group"><label class="field-label">Número / Grupo</label>
-            <input class="field-input" id="wa-num" type="tel" placeholder="+55 81 99999-0000" value="+55 81 99999-0000"></div>
-          <button class="btn-secondary" onclick="enviarRelatorio('WhatsApp')" style="margin-bottom:0">📤 Enviar agora</button>
-        </div>
-      </div>
-
-      <!-- EMAIL -->
-      <div class="export-channel">
-        <div class="export-channel-header" onclick="toggleChannel('email')">
-          <div class="export-ch-icon" style="background:rgba(59,130,246,.12)">📧</div>
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:600">E-mail</div>
-            <div style="font-size:11px;color:var(--text2)">Relatório com PDF em anexo</div>
-          </div>
-          <span id="email-arrow" style="color:var(--text2);transition:.2s;font-size:12px">▾</span>
-        </div>
-        <div class="export-channel-body" id="email-body">
-          <div class="export-row">
-            <span class="export-label">Ativar envio automático</span>
-            <label class="toggle"><input type="checkbox" checked><div class="toggle-track"></div></label>
-          </div>
-          <div class="export-row">
-            <span class="export-label">Horário</span>
-            <select class="time-select"><option>18:00</option><option selected>20:00</option><option>22:00</option></select>
-          </div>
-          <div class="export-row">
-            <span class="export-label">Anexar PDF</span>
-            <label class="toggle"><input type="checkbox" checked><div class="toggle-track"></div></label>
-          </div>
-          <div class="export-row">
-            <span class="export-label">Anexar KML</span>
-            <label class="toggle"><input type="checkbox"><div class="toggle-track"></div></label>
-          </div>
-          <div class="divider"></div>
-          <div class="form-group"><label class="field-label">Destinatários</label>
-            <input class="field-input" type="email" placeholder="gestores@empresa.com"></div>
-          <button class="btn-secondary" onclick="enviarRelatorio('E-mail')" style="margin-bottom:0">📤 Enviar agora</button>
-        </div>
-      </div>
-
-      <!-- EXPORTAR CSV/KML -->
-      <div class="export-channel">
-        <div class="export-channel-header" onclick="toggleChannel('local')">
-          <div class="export-ch-icon" style="background:rgba(239,68,68,.12)">📄</div>
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:600">Exportar arquivos</div>
-            <div style="font-size:11px;color:var(--text2)">CSV · KML · PDF</div>
-          </div>
-          <span id="local-arrow" style="color:var(--text2);transition:.2s;font-size:12px">▾</span>
-        </div>
-        <div class="export-channel-body" id="local-body">
-          <button class="btn-secondary" onclick="exportCSV()">⬇️ Baixar CSV (todos os postes)</button>
-          <button class="btn-secondary" onclick="exportKML()">⬇️ Baixar KML (Google Earth)</button>
-        </div>
-      </div>
-
-      <p class="section-label">Histórico de envios</p>
-      <div class="card">
-        <div class="history-item"><span>${new Date().toLocaleDateString('pt-BR')} · WhatsApp</span><span style="color:var(--ok)">✓ 18:02</span></div>
-        <div class="history-item"><span>${new Date().toLocaleDateString('pt-BR')} · E-mail</span><span style="color:var(--ok)">✓ 20:00</span></div>
-        <div class="history-item"><span>Ontem · WhatsApp</span><span style="color:var(--ok)">✓ 18:01</span></div>
-        <div class="history-item"><span>Ontem · E-mail</span><span style="color:var(--danger)">✗ Falha (offline)</span></div>
-      </div>
-      <div style="height:16px"></div>
-    </div>`;
-}
-
-function toggleChannel(id) {
-  const body = document.getElementById(id + '-body');
-  const arrow = document.getElementById(id + '-arrow');
-  const open = body.classList.toggle('open');
-  if (arrow) arrow.style.transform = open ? 'rotate(180deg)' : '';
-}
-
-function enviarRelatorio(canal) {
-  showToast(`Enviando via ${canal}...`, 'success');
-  setTimeout(() => showToast(`${canal} enviado com sucesso! ✓`, 'success'), 2000);
-}
-
-async function exportCSV() {
-  const postes = await PosteDB.getAll();
-  if (postes.length === 0) { showToast('Nenhum poste para exportar', 'warning'); return; }
-
-  const cols = ['id', 'barramento', 'latitude', 'longitude', 'logradouro', 'bairro', 'municipio', 'cep', 'created_at', 'synced'];
-  const header = cols.join(';');
-  const rows = postes.map(p => cols.map(c => JSON.stringify(p[c] ?? '')).join(';'));
-  const csv = [header, ...rows].join('\n');
-
-  downloadFile(`censo_postes_${dateStr()}.csv`, 'text/csv', csv);
-  showToast('CSV baixado!', 'success');
-}
-
-async function exportKML() {
-  const postes = await PosteDB.getAll();
-  if (postes.length === 0) { showToast('Nenhum poste para exportar', 'warning'); return; }
-
-  const placemarks = postes.filter(p => p.latitude).map(p => `
-    <Placemark>
-      <name>${escapeXML(p.barramento || 'Poste')}</name>
-      <description>${escapeXML(p.logradouro || '')} · ${escapeXML(p.municipio || '')}</description>
-      <Point><coordinates>${p.longitude},${p.latitude},0</coordinates></Point>
-    </Placemark>`).join('');
-
-  const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-<Document><name>Censo Telecom ${dateStr()}</name>${placemarks}</Document>
-</kml>`;
-
-  downloadFile(`censo_postes_${dateStr()}.kml`, 'application/vnd.google-earth.kml+xml', kml);
-  showToast('KML baixado!', 'success');
-}
-
-function downloadFile(name, mime, content) {
-  const blob = new Blob([content], { type: mime });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-function escapeXML(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-// ============================================================
-// PAINEL GESTOR
-// ============================================================
-async function renderGestor() {
-  const page = document.getElementById('page-gestor');
-  const postes = await PosteDB.getAll();
-  const pendentes = postes.filter(p => !p.synced);
-  const municipios = [...new Set(postes.map(p => p.municipio).filter(Boolean))];
-
-  // Agrupa por usuário
-  const porUsuario = {};
-  postes.forEach(p => {
-    const nome = p.usuario_nome || 'Técnico Local';
-    if (!porUsuario[nome]) porUsuario[nome] = 0;
-    porUsuario[nome]++;
-  });
-
-  page.innerHTML = `
-    <div class="page-header">
-      <h2>👔 Painel Gestor</h2>
-      <div class="btn-icon" onclick="abrirPainelWeb()">🌐</div>
-    </div>
-    <div class="page-content" style="padding-top:14px">
-      <div class="alert warning" style="margin-bottom:12px">
-        <div class="alert-header">
-          <div class="alert-icon" style="background:rgba(245,158,11,.18)">💻</div>
-          <div>
-            <div class="alert-title" style="color:var(--warn)">Painel Web completo</div>
-            <div class="alert-sub">Acesse pelo computador para visualização completa com mapas, aprovações e relatórios avançados</div>
-          </div>
-        </div>
-        <button class="btn-primary" onclick="abrirPainelWeb()" style="font-size:13px;padding:10px">🌐 Abrir painel no navegador</button>
-      </div>
-
-      <p class="section-label">Visão rápida</p>
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="stat-val" style="color:var(--ok)">${postes.length - pendentes.length}</div>
-          <div class="stat-lbl">Aprovados</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-val" style="color:var(--warn)">${pendentes.length}</div>
-          <div class="stat-lbl">Pendentes aprv.</div>
-        </div>
-      </div>
-
-      <p class="section-label">Produção por técnico</p>
-      <div class="card">
-        ${Object.entries(porUsuario).length === 0 ? `
-          <div class="empty-state" style="padding:20px 0">
-            <div class="empty-sub">Nenhum levantamento registrado</div>
-          </div>` :
-          Object.entries(porUsuario).sort((a,b) => b[1]-a[1]).map(([nome, qtd]) => `
-          <div class="team-row">
-            <div class="team-avatar">${nome[0].toUpperCase()}</div>
-            <div>
-              <div class="team-name">${nome}</div>
-              <div class="team-meta">Técnico de campo</div>
-            </div>
-            <div class="team-count">${qtd}</div>
-          </div>`).join('')
-        }
-      </div>
-
-      <p class="section-label">Municípios atendidos</p>
-      <div class="card">
-        ${municipios.length === 0 ? '<div style="font-size:12px;color:var(--text2)">Nenhum município</div>' :
-          municipios.map(m => `
-          <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
-            <span>📍 ${m}</span>
-            <span class="badge info">${postes.filter(p => p.municipio === m).length} postes</span>
-          </div>`).join('')
-        }
-      </div>
-
-      <p class="section-label" style="color:var(--accent)">Para configurar o painel web completo</p>
-      <div class="card" style="font-size:12px;line-height:1.8;color:var(--text2)">
-        1. Crie conta em <strong style="color:var(--text)">supabase.com</strong><br>
-        2. Crie projeto e copie a URL + chave<br>
-        3. Configure em <code style="color:var(--accent2)">db.js</code> (SUPABASE_URL e SUPABASE_ANON_KEY)<br>
-        4. Execute o SQL de criação das tabelas<br>
-        5. Hospede em <strong style="color:var(--text)">vercel.com</strong> ou seu servidor
-      </div>
-      <div style="height:16px"></div>
-    </div>`;
-}
-
-function abrirPainelWeb() {
-  showToast('Configure a URL do painel em db.js', 'warning');
-  // window.open('https://censo.suaempresa.com/admin', '_blank');
-}
-
-// ============================================================
-// MODAL & UTILS
-// ============================================================
-function closeModal() {
-  document.getElementById('modal').style.display = 'none';
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('modal').addEventListener('click', (e) => {
-    if (e.target.id === 'modal') closeModal();
-  });
-});
-
-function formatDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
-
-function dateStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-async function doLogout() {
-  await Auth.logout();
-  location.reload();
-}
-
-// ============================================================
-// START
-// ============================================================
-document.addEventListener('DOMContentLoaded', init);
