@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Censo Telecom</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0f1117;--bg2:#161a24;--bg3:#1d2233;--bg4:#242840;
+  --accent:#3b82f6;--accent2:#22d3ee;--warn:#f59e0b;--danger:#ef4444;--ok:#22c55e;
+  --text:#f0f4ff;--text2:#8b95b0;--text3:#4a5568;
+  --border:#2a3050;--border2:#3a4060;--font:system-ui,sans-serif;--mono:monospace;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;overflow:hidden}
+#app{height:100%;display:flex;flex-direction:column;max-width:480px;margin:0 auto;border-left:1px solid var(--border);border-right:1px solid var(--border)}
+
+/* SCREENS */
+.screen{display:none;flex-direction:column;height:100%}
+.screen.active{display:flex}
+
+/* LOGIN */
+.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:12px;overflow-y:auto}
+.login-logo{font-size:52px}
+.login-title{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.login-sub{font-size:14px;color:var(--text2);margin-bottom:8px}
+.login-footer{font-size:11px;color:var(--text3);margin-top:12px}
+.w100{width:100%;max-width:360px}
+
+/* FORM */
+.field-label{display:block;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px}
+.field-input{width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:var(--font);font-size:14px;outline:none;transition:border-color .2s;-webkit-appearance:none}
+.field-input:focus{border-color:var(--accent)}
+.field-input::placeholder{color:var(--text3)}
+.form-group{margin-bottom:12px;width:100%;max-width:360px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* BUTTONS */
+.btn{width:100%;max-width:360px;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-family:var(--font);font-size:15px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.btn:hover{opacity:.88}
+.btn:active{opacity:.75}
+.btn.secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border);font-size:14px;padding:12px}
+.btn.danger{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid rgba(239,68,68,.3)}
+.btn-sm{background:rgba(59,130,246,.12);color:var(--accent);border:1px solid rgba(59,130,246,.25);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font)}
+.btn-icon{background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px}
+
+/* STATUS BAR */
+.status-bar{background:var(--bg2);display:flex;justify-content:space-between;align-items:center;padding:10px 14px 8px;border-bottom:1px solid var(--border);flex-shrink:0}
+.sync-badge{display:flex;align-items:center;gap:5px;border-radius:20px;padding:3px 9px;font-size:11px;font-weight:600;transition:all .4s}
+.sync-badge.offline{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:var(--warn)}
+.sync-badge.online{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--ok)}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.pulse{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* PAGES */
+.page{display:none;flex:1;overflow-y:auto;overflow-x:hidden}
+.page.active{display:block}
+.page::-webkit-scrollbar{width:2px}
+.page::-webkit-scrollbar-thumb{background:var(--border2)}
+
+/* NAV */
+.bottom-nav{display:flex;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0;padding:6px 0}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;color:var(--text3);font-size:10px;padding:6px 0;transition:color .2s;position:relative}
+.nav-item.active{color:var(--accent)}
+.nav-icon{font-size:20px;line-height:1}
+.nav-badge{position:absolute;top:4px;right:calc(50% - 18px);background:var(--warn);color:#000;border-radius:10px;font-size:9px;font-weight:700;padding:1px 5px}
+
+/* PAGE HEADER */
+.page-header{background:var(--bg2);padding:14px 16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5}
+.page-header h2{font-size:17px;font-weight:600}
+.page-content{padding:14px}
+
+/* CARDS */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.card-title{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-bottom:10px}
+.section-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin:14px 0 8px}
+
+/* STATS */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:13px}
+.stat-val{font-size:28px;font-weight:600;line-height:1;font-family:var(--mono)}
+.stat-lbl{font-size:11px;color:var(--text2);margin-top:4px}
+.stat-delta{font-size:11px;margin-top:4px;color:var(--text3)}
+.up{color:var(--ok)}.warn-c{color:var(--warn)}
+
+/* ALERTS */
+.alert{border-radius:12px;padding:13px;margin-bottom:12px;border:1px solid;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+.alert.danger{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3)}
+.alert.warning{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.3)}
+.alert-title{font-size:13px;font-weight:600;color:var(--danger);margin-bottom:6px}
+.alert-body{background:var(--bg3);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px}
+.alert-row{display:flex;justify-content:space-between;padding:2px 0}
+.alert-key{color:var(--text2)}.alert-val{font-family:var(--mono)}
+.alert-actions{display:flex;gap:8px}
+.alert-btn{flex:1;padding:9px;border-radius:8px;border:none;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer}
+.alert-btn.primary{background:rgba(59,130,246,.15);color:var(--accent);border:1px solid rgba(59,130,246,.3)}
+.alert-btn.ghost{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
+
+/* PROV */
+.prov-item{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.prov-name{font-size:13px;font-weight:500}
+.prov-meta{font-size:10px;color:var(--text2)}
+.prov-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:2px 4px}
+
+/* POSTE LIST */
+.poste-item{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:13px;margin-bottom:8px;cursor:pointer}
+.poste-id{font-size:14px;font-weight:600;font-family:var(--mono);color:var(--accent2)}
+.poste-addr{font-size:12px;color:var(--text2);margin-top:3px}
+.badge{display:inline-block;font-size:10px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:4px}
+.badge.ok{background:rgba(34,197,94,.12);color:var(--ok);border:1px solid rgba(34,197,94,.2)}
+.badge.warn{background:rgba(245,158,11,.12);color:var(--warn);border:1px solid rgba(245,158,11,.2)}
+
+/* GEO */
+.geo-display{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 13px;display:flex;align-items:center;gap:10px}
+.geo-coords{font-family:var(--mono);font-size:12px;color:var(--accent)}
+
+/* MAP */
+#map-leaflet{height:calc(100dvh - 140px)}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;display:flex;align-items:flex-end;justify-content:center}
+.modal-box{background:var(--bg2);border-radius:20px 20px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px 18px 32px}
+
+/* TOAST */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:11px 18px;font-size:13px;font-weight:500;opacity:0;transition:all .3s;pointer-events:none;z-index:999;white-space:nowrap;display:flex;align-items:center;gap:8px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.success{border-color:rgba(34,197,94,.4);color:var(--ok)}
+.toast.warning{border-color:rgba(245,158,11,.4);color:var(--warn)}
+.toast.error{border-color:rgba(239,68,68,.4);color:var(--danger)}
+
+/* RADAR */
+.radar{width:110px;height:110px;position:relative;border-radius:50%;border:1.5px solid rgba(59,130,246,.3);margin:10px auto}
+.radar-ring{position:absolute;border:1px solid rgba(59,130,246,.12);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%)}
+.radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(59,130,246,.2) 0deg,transparent 60deg,transparent 360deg);animation:sweep 2.5s linear infinite}
+@keyframes sweep{to{transform:rotate(360deg)}}
+.radar-center{position:absolute;top:50%;left:50%;width:6px;height:6px;background:var(--accent);border-radius:50%;transform:translate(-50%,-50%)}
+.radar-blip{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--danger);transform:translate(-50%,-50%);animation:blip 1.2s ease-in-out infinite}
+@keyframes blip{0%,100%{opacity:1;transform:translate(-50%,-50%) scale(1)}50%{opacity:.5;transform:translate(-50%,-50%) scale(1.6)}}
+
+.divider{height:1px;background:var(--border);margin:12px 0}
+.error-msg{color:var(--danger);font-size:13px;text-align:center;padding:6px}
+.spinner{width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-state{text-align:center;padding:40px 24px;color:var(--text2)}
+.empty-icon{font-size:40px;margin-bottom:12px}
+select.field-input{cursor:pointer}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- LOGIN -->
+  <div id="screen-login" class="screen active">
+    <div class="login-wrap">
+      <div class="login-logo">📡</div>
+      <h1 class="login-title">Censo Telecom</h1>
+      <p class="login-sub" style="margin-bottom:16px">Levantamento de postes em campo</p>
+      <div class="form-group">
+        <label class="field-label">E-mail</label>
+        <input id="login-email" class="field-input" type="email" placeholder="tecnico@empresa.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="field-label">Senha</label>
+        <input id="login-password" class="field-input" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div id="login-error" class="error-msg" style="display:none"></div>
+      <button class="btn w100" onclick="doLogin()">Entrar</button>
+      <p class="login-footer">v2.0 · Funciona offline</p>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="screen-app" class="screen">
+    <div class="status-bar">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="status-user" style="font-size:12px;font-weight:600;color:var(--text2)"></span>
+        <div class="sync-badge offline" id="syncBadge">
+          <div class="sync-dot pulse" id="syncDot"></div>
+          <span id="syncText">verificando...</span>
+        </div>
+      </div>
+      <span id="status-time" style="font-size:12px;font-family:var(--mono);color:var(--text3)"></span>
+    </div>
+
+    <div id="page-dashboard" class="page active"></div>
+    <div id="page-novo-poste" class="page"></div>
+    <div id="page-mapa" class="page"></div>
+    <div id="page-exportar" class="page"></div>
+
+    <nav class="bottom-nav">
+      <div class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
+        <span class="nav-icon">🏠</span><span>Início</span>
+      </div>
+      <div class="nav-item" id="nav-mapa" onclick="showPage('mapa')">
+        <span class="nav-icon">🗺️</span><span>Mapa</span>
+      </div>
+      <div class="nav-item" id="nav-novo-poste" onclick="showPage('novo-poste')" style="position:relative">
+        <span class="nav-icon">➕</span><span>Novo</span>
+        <div class="nav-badge" id="queueBadge" style="display:none">0</div>
+      </div>
+      <div class="nav-item" id="nav-exportar" onclick="showPage('exportar')">
+        <span class="nav-icon">📤</span><span>Exportar</span>
+      </div>
+      <div class="nav-item" onclick="doLogout()">
+        <span class="nav-icon">🚪</span><span>Sair</span>
+      </div>
+    </nav>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal-overlay" id="modal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box" id="modal-content"></div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG SUPABASE
+// ============================================================
+const SB_URL = 'https://zxvcfwpwuglyqagkewn.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmtjZndwd3VnbHlxYWdrZXduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwMDkyMTQsImV4cCI6MjA5NTU4NTIxNH0.k_gNnBqgvrFTQ4cHvsaIjh_wgTG4M8B50XWJkebK4S0';
+let sb = null;
+try { sb = window.supabase.createClient(SB_URL, SB_KEY); } catch(e) {}
+
+// ============================================================
+// INDEXEDDB
+// ============================================================
+let db = null;
+async function initDB() {
+  return new Promise((res) => {
+    const req = indexedDB.open('censo_v2', 1);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('postes')) {
+        const s = d.createObjectStore('postes', {keyPath:'id'});
+        s.createIndex('synced','synced'); s.createIndex('municipio','municipio');
+      }
+      if (!d.objectStoreNames.contains('provedores')) {
+        const s = d.createObjectStore('provedores', {keyPath:'id'});
+        s.createIndex('poste_id','poste_id');
+      }
+      if (!d.objectStoreNames.contains('queue')) {
+        d.createObjectStore('queue', {keyPath:'id',autoIncrement:true});
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; res(); };
+    req.onerror = () => res();
+  });
+}
+
+function dbAll(store, idx, val) {
+  return new Promise(res => {
+    if (!db) return res([]);
+    try {
+      const tx = db.transaction(store,'readonly'), s = tx.objectStore(store);
+      const r = idx ? s.index(idx).getAll(val) : s.getAll();
+      r.onsuccess = () => res(r.result||[]);
+      r.onerror = () => res([]);
+    } catch { res([]); }
+  });
+}
+function dbPut(store, data) {
+  return new Promise(res => {
+    if (!db) return res();
+    try {
+      const r = db.transaction(store,'readwrite').objectStore(store).put(data);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => res();
+    } catch { res(); }
+  });
+}
+function dbGet(store, key) {
+  return new Promise(res => {
+    if (!db) return res(null);
+    try {
+      const r = db.transaction(store,'readonly').objectStore(store).get(key);
+      r.onsuccess = () => res(r.result||null);
+      r.onerror = () => res(null);
+    } catch { res(null); }
+  });
+}
+function dbDel(store, key) {
+  return new Promise(res => {
+    if (!db) return res();
+    try {
+      db.transaction(store,'readwrite').objectStore(store).delete(key).onsuccess = () => res();
+    } catch { res(); }
+  });
+}
+
+// ============================================================
+// POSTES
+// ============================================================
+const Postes = {
+  async save(p) {
+    if (!p.id) p.id = 'L'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+    p.synced = false; p.created_at = p.created_at||new Date().toISOString();
+    await dbPut('postes', p);
+    await dbPut('queue', {tipo:'poste', ref:p.id, dados:p, ts:Date.now()});
+    return p;
+  },
+  getAll: () => dbAll('postes'),
+  getById: id => dbGet('postes', id),
+  async markSynced(lid, rid) {
+    const p = await dbGet('postes', lid);
+    if (p) { p.synced=true; p.remote_id=rid; await dbPut('postes', p); }
+  },
+  async checkDup(lat, lng, raio=5) {
+    const all = await dbAll('postes');
+    for (const p of all) {
+      if (!p.latitude||!p.longitude) continue;
+      const d = calcDist(lat,lng,p.latitude,p.longitude);
+      if (d<=raio) return {poste:p, dist:d.toFixed(1)};
+    }
+    return null;
+  }
+};
+
+const Provs = {
+  async save(p) {
+    if (!p.id) p.id = 'P'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+    p.synced=false; p.created_at=new Date().toISOString();
+    await dbPut('provedores', p);
+    await dbPut('queue', {tipo:'provedor', ref:p.id, dados:p, ts:Date.now()});
+    return p;
+  },
+  getByPoste: pid => dbAll('provedores','poste_id',pid),
+};
+
+// ============================================================
+// SYNC
+// ============================================================
+let syncOnline = false;
+async function updateSyncUI() {
+  const q = await dbAll('queue');
+  const badge = document.getElementById('syncBadge');
+  const dot = document.getElementById('syncDot');
+  const txt = document.getElementById('syncText');
+  const nb = document.getElementById('queueBadge');
+  if (!badge) return;
+  if (syncOnline && q.length===0) {
+    badge.className='sync-badge online'; dot.className='sync-dot'; txt.textContent='online ✓';
+  } else if (syncOnline) {
+    badge.className='sync-badge online'; dot.className='sync-dot'; txt.textContent=q.length+' pendentes';
+  } else {
+    badge.className='sync-badge offline'; dot.className='sync-dot pulse'; txt.textContent=q.length>0?q.length+' offline':'sem conexão';
+  }
+  if (nb) { if (q.length>0){nb.style.display='';nb.textContent=q.length;}else nb.style.display='none'; }
+}
+
+async function doSync() {
+  if (!syncOnline||!sb) return;
+  const q = await dbAll('queue');
+  if (!q.length) return;
+  let ok=0;
+  for (const item of q) {
+    try {
+      if (item.tipo==='poste') {
+        const d=item.dados;
+        const {data,error} = await sb.from('postes').insert({
+          barramento:d.barramento,latitude:d.latitude,longitude:d.longitude,
+          logradouro:d.logradouro,bairro:d.bairro,municipio:d.municipio,
+          estado:d.estado,cep:d.cep,observacoes:d.observacoes,
+          usuario_email:currentUser?.email||'',usuario_nome:getUserName(),
+          created_at:d.created_at
+        }).select().single();
+        if (!error) { await Postes.markSynced(d.id, data.id); await dbDel('queue',item.id); ok++; }
+      } else if (item.tipo==='provedor') {
+        const d=item.dados;
+        const poste = await Postes.getById(d.poste_id);
+        const {error} = await sb.from('provedores').insert({
+          poste_id:poste?.remote_id||d.poste_id, nome:d.nome, tipo:d.tipo||'', created_at:d.created_at
+        });
+        if (!error) { await dbDel('queue',item.id); ok++; }
+      }
+    } catch {}
+  }
+  if (ok>0) { showToast(ok+' registro(s) sincronizado(s)!','success'); updateSyncUI(); }
+}
+
+window.addEventListener('online', async () => { syncOnline=true; await updateSyncUI(); doSync(); });
+window.addEventListener('offline', () => { syncOnline=false; updateSyncUI(); });
+
+// ============================================================
+// GPS
+// ============================================================
+function calcDist(la1,lo1,la2,lo2) {
+  const R=6371000,dLa=(la2-la1)*Math.PI/180,dLo=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function getGPS() {
+  return new Promise((res,rej) => {
+    if (!navigator.geolocation) return rej(new Error('GPS indisponível'));
+    navigator.geolocation.getCurrentPosition(
+      p => res({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}),
+      e => rej(e), {enableHighAccuracy:true,timeout:12000,maximumAge:0}
+    );
+  });
+}
+async function reverseGeo(lat,lng) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`);
+    const d = await r.json();
+    return {
+      logradouro:(d.address.road||d.address.street||'')+(d.address.house_number?', '+d.address.house_number:''),
+      bairro:d.address.suburb||d.address.neighbourhood||'',
+      municipio:d.address.city||d.address.town||d.address.village||'',
+      estado:d.address.state||'PE', cep:d.address.postcode||''
+    };
+  } catch { return {logradouro:'',bairro:'',municipio:'',estado:'PE',cep:''}; }
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+let currentUser = null;
+function getUserName() {
+  if (!currentUser) return 'Técnico';
+  return currentUser.user_metadata?.nome || currentUser.email?.split('@')[0] || 'Técnico';
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pw = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const btn = document.querySelector('#screen-login .btn');
+  if (!email||!pw) { showErr('Preencha e-mail e senha'); return; }
+  btn.textContent='Entrando...'; btn.disabled=true; errEl.style.display='none';
+  try {
+    if (sb) {
+      const {data,error} = await sb.auth.signInWithPassword({email,password:pw});
+      if (error) throw error;
+      currentUser = data.user;
+    } else {
+      currentUser = {email, user_metadata:{nome:email.split('@')[0]}};
+    }
+    startApp();
+  } catch(e) {
+    const msg = e.message||'';
+    if (msg.includes('fetch')||msg.includes('network')||msg.includes('Failed')) {
+      // Sem rede — entra offline
+      currentUser = {email, user_metadata:{nome:email.split('@')[0]}};
+      startApp();
+      showToast('Modo offline ativo','warning');
+    } else {
+      showErr('E-mail ou senha incorretos');
+    }
+  } finally {
+    btn.textContent='Entrar'; btn.disabled=false;
+  }
+}
+function showErr(m) {
+  const e = document.getElementById('login-error');
+  e.textContent=m; e.style.display='block';
+}
+function doLogout() {
+  if (sb) sb.auth.signOut().catch(()=>{});
+  currentUser=null;
+  document.getElementById('screen-app').style.display='none';
+  document.getElementById('screen-login').style.display='flex';
+  document.getElementById('login-password').value='';
+}
+
+// ============================================================
+// APP START
+// ============================================================
+async function startApp() {
+  document.getElementById('screen-login').style.display='none';
+  document.getElementById('screen-app').style.display='flex';
+  document.getElementById('status-user').textContent=getUserName();
+  syncOnline = navigator.onLine;
+  await updateSyncUI();
+  if (syncOnline) setTimeout(doSync, 2000);
+  setInterval(() => {
+    const el=document.getElementById('status-time');
+    if (el) el.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  },1000);
+  renderDashboard();
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  const navEl = document.getElementById('nav-'+name);
+  if (navEl) navEl.classList.add('active');
+  if (name==='dashboard') renderDashboard();
+  else if (name==='novo-poste') renderNovoPoste();
+  else if (name==='mapa') renderMapa();
+  else if (name==='exportar') renderExportar();
+}
+
+// ============================================================
+// TOAST / MODAL
+// ============================================================
+function showToast(msg, type='success') {
+  const t=document.getElementById('toast');
+  const icons={success:'✅',warning:'⚠️',error:'❌'};
+  t.innerHTML=(icons[type]||'')+' '+msg;
+  t.className='toast show '+type;
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>t.classList.remove('show'),3200);
+}
+function closeModal() { document.getElementById('modal').style.display='none'; }
+function openModal(html) {
+  document.getElementById('modal-content').innerHTML=html;
+  document.getElementById('modal').style.display='flex';
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+async function renderDashboard() {
+  const page=document.getElementById('page-dashboard');
+  const postes=await Postes.getAll();
+  const provs=await dbAll('provedores');
+  const q=await dbAll('queue');
+  const munis=[...new Set(postes.map(p=>p.municipio).filter(Boolean))];
+  const hoje=new Date().toDateString();
+  const hj=postes.filter(p=>new Date(p.created_at).toDateString()===hoje).length;
+  const provNomes=[...new Set(provs.map(p=>p.nome).filter(Boolean))];
+
+  page.innerHTML=`
+  <div class="page-header">
+    <h2>📡 Censo Telecom</h2>
+    <div style="display:flex;gap:6px">
+      <div class="btn-icon" onclick="doSync()" title="Sincronizar">🔄</div>
+    </div>
+  </div>
+  <div class="page-content">
+    ${q.length>0?`<div class="alert warning" style="margin-top:2px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><b style="color:var(--warn)">${q.length} item(s) aguardando sync</b><br><small style="color:var(--text2)">${syncOnline?'Clique em 🔄 para enviar':'Sem conexão — será enviado automaticamente'}</small></div>
+        ${syncOnline?`<button class="btn-sm" onclick="doSync()">Enviar</button>`:''}
+      </div>
+    </div>`:''}
+    <p class="section-label">Resumo</p>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-val" style="color:var(--accent)">${postes.length}</div><div class="stat-lbl">Postes</div><div class="stat-delta up">+${hj} hoje</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--accent2)">${provNomes.length}</div><div class="stat-lbl">Provedores</div><div class="stat-delta">${provs.length} ocup.</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--ok)">${munis.length}</div><div class="stat-lbl">Municípios</div><div class="stat-delta">${munis[0]||'—'}</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:${q.length>0?'var(--warn)':'var(--ok)'}">${q.length}</div><div class="stat-lbl">Fila sync</div><div class="stat-delta ${q.length>0?'warn-c':'up'}">${q.length>0?'⚠ pendente':'✓ ok'}</div></div>
+    </div>
+    <p class="section-label">Últimos levantamentos</p>
+    ${postes.length===0?`<div class="empty-state"><div class="empty-icon">📍</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Nenhum poste cadastrado</div><div>Toque em ➕ para começar</div></div>`
+    :postes.slice().reverse().slice(0,10).map(p=>`
+    <div class="poste-item" onclick="verPoste('${p.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span class="poste-id">${p.barramento||'S/N'}</span>
+        <span class="badge ${p.synced?'ok':'warn'}">${p.synced?'SYNC':'PENDENTE'}</span>
+      </div>
+      <div class="poste-addr">📍 ${p.logradouro||'Sem endereço'} · ${p.municipio||'—'}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">${fmtDate(p.created_at)}</div>
+    </div>`).join('')}
+    <div style="height:10px"></div>
+    <button class="btn" onclick="showPage('novo-poste')">➕ Novo Levantamento</button>
+    <div style="height:16px"></div>
+  </div>`;
+}
+
+// ============================================================
+// NOVO POSTE
+// ============================================================
+let gpsAtual=null, provsAtual=[], dupAtual=null;
+
+async function renderNovoPoste() {
+  gpsAtual=null; provsAtual=[]; dupAtual=null;
+  const page=document.getElementById('page-novo-poste');
+  page.innerHTML=`
+  <div class="page-header">
+    <button style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer" onclick="showPage('dashboard')">← Voltar</button>
+    <h2>Novo Poste</h2>
+    <div style="width:50px"></div>
+  </div>
+  <div class="page-content">
+    <div id="dup-container"></div>
+    <div class="card">
+      <div class="card-title">📍 Geolocalização</div>
+      <div class="geo-display" id="geo-display">
+        <span style="font-size:20px">📡</span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">Aguardando GPS...</div></div>
+        <button class="btn-sm" onclick="captureGPS()">Capturar</button>
+      </div>
+      <div id="geo-details" style="display:none;margin-top:10px">
+        <div class="field-row" style="margin-bottom:8px">
+          <div><label class="field-label">Logradouro</label><input class="field-input" id="f-log" type="text" placeholder="Rua..."></div>
+          <div><label class="field-label">Bairro</label><input class="field-input" id="f-bairro" type="text"></div>
+        </div>
+        <div class="field-row">
+          <div><label class="field-label">Município</label><input class="field-input" id="f-mun" type="text"></div>
+          <div><label class="field-label">CEP</label><input class="field-input" id="f-cep" type="text" placeholder="00000-000"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🔩 Dados do Poste</div>
+      <div style="margin-bottom:12px"><label class="field-label">Barramento / ID</label>
+        <input class="field-input" id="f-barr" type="text" placeholder="Ex: A3, PE-0482..."></div>
+      <div><label class="field-label">Observações</label>
+        <textarea class="field-input" id="f-obs" rows="2" style="resize:none" placeholder="Estado, ocorrências..."></textarea></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span class="card-title">🏢 Provedores</span>
+        <button class="btn-sm" onclick="abrirAddProv()">+ Adicionar</button>
+      </div>
+      <div id="prov-list"><div style="font-size:12px;color:var(--text2);text-align:center;padding:12px">Nenhum provedor</div></div>
+    </div>
+    <button class="btn" onclick="salvarPoste()">💾 Salvar</button>
+    <div style="height:16px"></div>
+  </div>`;
+  setTimeout(captureGPS, 400);
+}
+
+async function captureGPS() {
+  const disp=document.getElementById('geo-display');
+  const det=document.getElementById('geo-details');
+  if (!disp) return;
+  disp.innerHTML=`<span class="spinner"></span><span style="font-size:13px;color:var(--text2);margin-left:8px">Capturando GPS...</span>`;
+  try {
+    const gps=await getGPS();
+    gpsAtual=gps;
+    const dup=await Postes.checkDup(gps.lat,gps.lng,5);
+    if (dup) renderDupAlert(dup);
+    const geo=await reverseGeo(gps.lat,gps.lng);
+    disp.innerHTML=`<span style="font-size:20px">✅</span>
+      <div style="flex:1"><div class="geo-coords">${gps.lat.toFixed(6)}°, ${gps.lng.toFixed(6)}°</div>
+      <div style="font-size:11px;color:var(--text2)">±${Math.round(gps.acc)}m</div></div>
+      <button class="btn-sm" onclick="captureGPS()">🔄</button>`;
+    if (det) {
+      det.style.display='';
+      document.getElementById('f-log').value=geo.logradouro;
+      document.getElementById('f-bairro').value=geo.bairro;
+      document.getElementById('f-mun').value=geo.municipio;
+      document.getElementById('f-cep').value=geo.cep;
+    }
+  } catch {
+    disp.innerHTML=`<span style="font-size:20px">⚠️</span>
+      <div style="flex:1"><div style="font-size:13px;color:var(--warn)">GPS indisponível</div>
+      <div style="font-size:11px;color:var(--text2)">Preencha manualmente</div></div>
+      <button class="btn-sm" onclick="captureGPS()">Tentar</button>`;
+    if (det) det.style.display='';
+  }
+}
+
+function renderDupAlert(dup) {
+  const c=document.getElementById('dup-container');
+  if (!c) return;
+  c.innerHTML=`<div class="alert danger">
+    <div class="alert-title">⚠️ Poste duplicado detectado! (${dup.dist}m)</div>
+    <div class="radar">
+      <div class="radar-ring" style="width:40%;height:40%"></div>
+      <div class="radar-ring" style="width:72%;height:72%"></div>
+      <div class="radar-sweep"></div><div class="radar-center"></div>
+      <div class="radar-blip" style="top:38%;left:54%"></div>
+    </div>
+    <div class="alert-body">
+      <div class="alert-row"><span class="alert-key">Barramento</span><span class="alert-val">${dup.poste.barramento||'—'}</span></div>
+      <div class="alert-row"><span class="alert-key">Distância</span><span class="alert-val" style="color:var(--danger)">${dup.dist}m</span></div>
+      <div class="alert-row"><span class="alert-key">Endereço</span><span class="alert-val">${dup.poste.logradouro||'—'}</span></div>
+    </div>
+    <div class="alert-actions">
+      <button class="alert-btn primary" onclick="verPoste('${dup.poste.id}');closeModal()">Ver existente</button>
+      <button class="alert-btn ghost" onclick="document.getElementById('dup-container').innerHTML='';showToast('Ignorado','warning')">Ignorar</button>
+    </div>
+  </div>`;
+}
+
+function abrirAddProv() {
+  openModal(`
+    <div style="font-size:16px;font-weight:600;margin-bottom:14px">Adicionar Provedor</div>
+    <div style="margin-bottom:12px"><label class="field-label">Nome do Provedor</label>
+      <input class="field-input" id="mp-nome" type="text" placeholder="Ex: Vivo Fibra, Brisanet..."></div>
+    <div style="margin-bottom:12px"><label class="field-label">Tipo de Cabo</label>
+      <select class="field-input" id="mp-tipo">
+        <option value="">Selecione...</option>
+        <option>Fibra óptica</option><option>Coaxial</option>
+        <option>Metálico</option><option>ADSS</option><option>Drop</option>
+      </select></div>
+    <button class="btn" style="max-width:100%" onclick="confirmAddProv()">Confirmar</button>
+    <button class="btn secondary" style="max-width:100%;margin-top:8px" onclick="closeModal()">Cancelar</button>`);
+  setTimeout(()=>document.getElementById('mp-nome')?.focus(),100);
+}
+
+function confirmAddProv() {
+  const nome=document.getElementById('mp-nome').value.trim();
+  const tipo=document.getElementById('mp-tipo').value;
+  if (!nome){showToast('Digite o nome','warning');return;}
+  provsAtual.push({nome,tipo});
+  closeModal(); renderProvList();
+  showToast(nome+' adicionado!','success');
+}
+
+function renderProvList() {
+  const l=document.getElementById('prov-list');
+  if (!l) return;
+  if (!provsAtual.length){l.innerHTML='<div style="font-size:12px;color:var(--text2);text-align:center;padding:12px">Nenhum provedor</div>';return;}
+  l.innerHTML=provsAtual.map((p,i)=>`
+    <div class="prov-item">
+      <div><div class="prov-name">${p.nome}</div><div class="prov-meta">${p.tipo||'—'}</div></div>
+      <button class="prov-remove" onclick="provsAtual.splice(${i},1);renderProvList()">✕</button>
+    </div>`).join('');
+}
+
+async function salvarPoste() {
+  if (!gpsAtual){showToast('Capture o GPS primeiro','warning');return;}
+  const poste={
+    barramento:document.getElementById('f-barr')?.value.trim(),
+    logradouro:document.getElementById('f-log')?.value.trim(),
+    bairro:document.getElementById('f-bairro')?.value.trim(),
+    municipio:document.getElementById('f-mun')?.value.trim(),
+    cep:document.getElementById('f-cep')?.value.trim(),
+    observacoes:document.getElementById('f-obs')?.value.trim(),
+    latitude:gpsAtual.lat, longitude:gpsAtual.lng, gps_accuracy:gpsAtual.acc,
+    usuario_nome:getUserName(), usuario_email:currentUser?.email||''
+  };
+  const saved=await Postes.save(poste);
+  for (const p of provsAtual) await Provs.save({...p, poste_id:saved.id});
+  await updateSyncUI();
+  showToast('Poste salvo! Sync quando online.','success');
+  setTimeout(()=>showPage('dashboard'),1400);
+}
+
+async function verPoste(id) {
+  const p=await Postes.getById(id);
+  if (!p) return;
+  const provs=await Provs.getByPoste(id);
+  openModal(`
+    <div style="display:flex;justify-content:space-between;margin-bottom:14px">
+      <div style="font-size:16px;font-weight:600">${p.barramento||'Sem ID'}</div>
+      <span class="badge ${p.synced?'ok':'warn'}">${p.synced?'SYNC':'PENDENTE'}</span>
+    </div>
+    <div class="alert-body" style="margin-bottom:12px">
+      <div class="alert-row"><span class="alert-key">Endereço</span><span class="alert-val">${p.logradouro||'—'}</span></div>
+      <div class="alert-row"><span class="alert-key">Município</span><span class="alert-val">${p.municipio||'—'}</span></div>
+      <div class="alert-row"><span class="alert-key">GPS</span><span class="alert-val" style="color:var(--accent)">${p.latitude?.toFixed(6)||'—'}, ${p.longitude?.toFixed(6)||'—'}</span></div>
+      <div class="alert-row"><span class="alert-key">Data</span><span class="alert-val">${fmtDate(p.created_at)}</span></div>
+    </div>
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">PROVEDORES (${provs.length})</div>
+    ${provs.map(pr=>`<div class="prov-item"><div><div class="prov-name">${pr.nome}</div><div class="prov-meta">${pr.tipo||'—'}</div></div></div>`).join('')||'<div style="font-size:12px;color:var(--text2)">Nenhum</div>'}
+    <div style="height:10px"></div>
+    <button class="btn secondary" style="max-width:100%" onclick="closeModal()">Fechar</button>`);
+}
+
+// ============================================================
+// MAPA
+// ============================================================
+let mapInst=null;
+async function renderMapa() {
+  const page=document.getElementById('page-mapa');
+  page.innerHTML=`
+    <div class="page-header"><h2>🗺️ Mapa</h2><div class="btn-icon" onclick="centerMap()">🎯</div></div>
+    <div id="map-leaflet"></div>`;
+  await new Promise(r=>setTimeout(r,100));
+  if (mapInst){mapInst.remove();mapInst=null;}
+  mapInst=L.map('map-leaflet').setView([-8.28,-35.97],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:19}).addTo(mapInst);
+  const postes=await Postes.getAll();
+  const markers=[];
+  postes.forEach(p=>{
+    if (!p.latitude||!p.longitude) return;
+    const color=p.synced?'#22c55e':'#f59e0b';
+    const icon=L.divIcon({className:'',html:`<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>`,iconSize:[14,14],iconAnchor:[7,7]});
+    const m=L.marker([p.latitude,p.longitude],{icon}).addTo(mapInst);
+    m.bindPopup(`<b>${p.barramento||'Poste'}</b><br>${p.logradouro||''}<br><small>${p.municipio||''}</small>`);
+    markers.push(m);
+  });
+  if (markers.length>0) mapInst.fitBounds(L.featureGroup(markers).getBounds().pad(0.2));
+}
+
+function centerMap() {
+  getGPS().then(g=>mapInst?.setView([g.lat,g.lng],16)).catch(()=>showToast('GPS indisponível','warning'));
+}
+
+// ============================================================
+// EXPORTAR
+// ============================================================
+async function renderExportar() {
+  const postes=await Postes.getAll();
+  const hoje=new Date().toDateString();
+  const hj=postes.filter(p=>new Date(p.created_at).toDateString()===hoje).length;
+  document.getElementById('page-exportar').innerHTML=`
+    <div class="page-header"><h2>📤 Exportar</h2></div>
+    <div class="page-content" style="padding-top:14px">
+      <div class="card">
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">Relatório de hoje</div>
+        <div style="font-size:12px;color:var(--text2)">${new Date().toLocaleDateString('pt-BR')} · ${hj} postes</div>
+        <div class="stat-grid" style="margin:12px 0 0">
+          <div class="stat-card" style="padding:10px"><div class="stat-val" style="font-size:22px;color:var(--accent)">${hj}</div><div class="stat-lbl">Hoje</div></div>
+          <div class="stat-card" style="padding:10px"><div class="stat-val" style="font-size:22px;color:var(--ok)">${postes.length}</div><div class="stat-lbl">Total</div></div>
+        </div>
+      </div>
+      <p class="section-label">Exportar arquivos</p>
+      <button class="btn secondary" onclick="exportCSV()" style="max-width:100%;margin-bottom:8px">⬇️ Baixar CSV</button>
+      <button class="btn secondary" onclick="exportKML()" style="max-width:100%;margin-bottom:8px">⬇️ Baixar KML (Google Earth)</button>
+      <div style="height:16px"></div>
+    </div>`;
+}
+
+async function exportCSV() {
+  const postes=await Postes.getAll();
+  if (!postes.length){showToast('Nenhum poste','warning');return;}
+  const cols=['id','barramento','latitude','longitude','logradouro','bairro','municipio','cep','created_at','synced'];
+  const csv=[cols.join(';'),...postes.map(p=>cols.map(c=>JSON.stringify(p[c]??'')).join(';'))].join('\n');
+  dlFile(`censo_${dtStr()}.csv`,'text/csv',csv);
+  showToast('CSV baixado!','success');
+}
+
+async function exportKML() {
+  const postes=await Postes.getAll();
+  if (!postes.length){showToast('Nenhum poste','warning');return;}
+  const pm=postes.filter(p=>p.latitude).map(p=>`<Placemark><name>${esc(p.barramento||'Poste')}</name><description>${esc(p.logradouro||'')} · ${esc(p.municipio||'')}</description><Point><coordinates>${p.longitude},${p.latitude},0</coordinates></Point></Placemark>`).join('');
+  dlFile(`censo_${dtStr()}.kml`,'application/vnd.google-earth.kml+xml',`<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Censo ${dtStr()}</name>${pm}</Document></kml>`);
+  showToast('KML baixado!','success');
+}
+
+function dlFile(name,mime,content) {
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type:mime}));
+  a.download=name; a.click(); URL.revokeObjectURL(a.href);
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function dtStr(){return new Date().toISOString().slice(0,10);}
+function fmtDate(iso){if(!iso)return'—';const d=new Date(iso);return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', async () => {
+  await initDB();
+  syncOnline = navigator.onLine;
+  // Verifica sessão existente
+  if (sb) {
+    try {
+      const {data} = await sb.auth.getSession();
+      if (data.session?.user) { currentUser=data.session.user; startApp(); return; }
+    } catch {}
+  }
+  // Mostra login
+  document.getElementById('screen-login').style.display='flex';
+});
+</script>
+</body>
+</html>
