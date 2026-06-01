@@ -99,7 +99,7 @@ const Sync = {
         usuario_nome: Auth.getName(),
         created_at: d.created_at
       };
-      const { data, error } = await supabase.from('postes').insert(payload).select().single();
+      const { data, error } = await supabaseClient.from('postes').insert(payload).select().single();
       if (error) throw error;
       await PosteDB.markSynced(d.id, data.id);
     } else if (item.tipo === 'provedor') {
@@ -112,7 +112,7 @@ const Sync = {
         tipo: d.tipo || '',
         created_at: d.created_at
       };
-      const { error } = await supabase.from('provedores').insert(payload);
+      const { error } = await supabaseClient.from('provedores').insert(payload);
       if (error) throw error;
       await ProvDB.markSynced(d.id);
     }
