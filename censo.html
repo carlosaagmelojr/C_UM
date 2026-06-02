@@ -353,33 +353,55 @@ async function updateSyncUI() {
 }
 
 async function doSync() {
-  if (!syncOnline||!sb) return;
   const q = await dbAll('queue');
-  if (!q.length) return;
-  let ok=0;
+  if (!q.length) { showToast('Nada para sincronizar','warning'); return; }
+  if (!sb) { showToast('Banco não configurado','error'); return; }
+  
+  showToast('Sincronizando...', 'warning');
+  let ok=0, erros=[];
+  
   for (const item of q) {
     try {
       if (item.tipo==='poste') {
         const d=item.dados;
-        const {data,error} = await sb.from('postes').insert({
-          barramento:d.barramento,latitude:d.latitude,longitude:d.longitude,
-          logradouro:d.logradouro,bairro:d.bairro,municipio:d.municipio,
-          estado:d.estado,cep:d.cep,observacoes:d.observacoes,
-          usuario_email:currentUser?.email||'',usuario_nome:getUserName(),
-          created_at:d.created_at
-        }).select().single();
-        if (!error) { await Postes.markSynced(d.id, data.id); await dbDel('queue',item.id); ok++; }
+        const payload = {
+          barramento:d.barramento||null,
+          latitude:parseFloat(d.latitude)||0,
+          longitude:parseFloat(d.longitude)||0,
+          logradouro:d.logradouro||null,
+          bairro:d.bairro||null,
+          municipio:d.municipio||null,
+          estado:d.estado||'PE',
+          cep:d.cep||null,
+          observacoes:d.observacoes||null,
+          usuario_email:currentUser?.email||'anonimo',
+          usuario_nome:getUserName(),
+          created_at:d.created_at||new Date().toISOString()
+        };
+        const {data,error} = await sb.from('postes').insert(payload).select().single();
+        if (error) { erros.push('Poste: '+error.message); }
+        else { await Postes.markSynced(d.id, data.id); await dbDel('queue',item.id); ok++; }
       } else if (item.tipo==='provedor') {
         const d=item.dados;
         const poste = await Postes.getById(d.poste_id);
-        const {error} = await sb.from('provedores').insert({
-          poste_id:poste?.remote_id||d.poste_id, nome:d.nome, tipo:d.tipo||'', created_at:d.created_at
-        });
-        if (!error) { await dbDel('queue',item.id); ok++; }
+        const payload = {
+          poste_id: poste?.remote_id || null,
+          nome: d.nome||'Desconhecido',
+          tipo: d.tipo||'',
+          created_at: d.created_at||new Date().toISOString()
+        };
+        if (!payload.poste_id) { await dbDel('queue',item.id); ok++; continue; }
+        const {error} = await sb.from('provedores').insert(payload);
+        if (error) { erros.push('Prov: '+error.message); }
+        else { await dbDel('queue',item.id); ok++; }
       }
-    } catch {}
+    } catch(e) { erros.push(e.message||'Erro desconhecido'); }
   }
-  if (ok>0) { showToast(ok+' registro(s) sincronizado(s)!','success'); updateSyncUI(); }
+  
+  await updateSyncUI();
+  if (ok>0) showToast(ok+' registro(s) sincronizado(s)! ✓','success');
+  if (erros.length>0) { console.error('Erros sync:', erros); showToast('Erro: '+erros[0],'error'); }
+  if (ok===0 && erros.length===0) showToast('Nada foi enviado','warning');
 }
 
 window.addEventListener('online', async () => { syncOnline=true; await updateSyncUI(); doSync(); });
@@ -808,10 +830,36 @@ async function renderExportar() {
 async function exportCSV() {
   const postes=await Postes.getAll();
   if (!postes.length){showToast('Nenhum poste','warning');return;}
-  const cols=['id','barramento','latitude','longitude','logradouro','bairro','municipio','cep','created_at','synced'];
-  const csv=[cols.join(';'),...postes.map(p=>cols.map(c=>JSON.stringify(p[c]??'')).join(';'))].join('\n');
-  dlFile(`censo_${dtStr()}.csv`,'text/csv',csv);
-  showToast('CSV baixado!','success');
+  
+  // Busca provedores de cada poste
+  const rows = [];
+  const header = ['ID','Barramento','Latitude','Longitude','Logradouro','Bairro','Municipio','CEP','Estado','Observacoes','Provedor','Tipo_Cabo','Usuario','Data','Sincronizado'];
+  rows.push(header.join(';'));
+  
+  for (const p of postes) {
+    const provs = await Provs.getByPoste(p.id);
+    if (provs.length === 0) {
+      // Poste sem provedor — uma linha
+      rows.push([
+        p.id||'', p.barramento||'', p.latitude||'', p.longitude||'',
+        p.logradouro||'', p.bairro||'', p.municipio||'', p.cep||'', p.estado||'',
+        p.observacoes||'', '', '', p.usuario_nome||'', fmtDate(p.created_at), p.synced?'Sim':'Não'
+      ].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';'));
+    } else {
+      // Uma linha por provedor
+      for (const prov of provs) {
+        rows.push([
+          p.id||'', p.barramento||'', p.latitude||'', p.longitude||'',
+          p.logradouro||'', p.bairro||'', p.municipio||'', p.cep||'', p.estado||'',
+          p.observacoes||'', prov.nome||'', prov.tipo||'', p.usuario_nome||'', fmtDate(p.created_at), p.synced?'Sim':'Não'
+        ].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';'));
+      }
+    }
+  }
+  
+  const csv = '\uFEFF' + rows.join('\n'); // BOM para Excel reconhecer UTF-8
+  dlFile(`censo_${dtStr()}.csv`,'text/csv;charset=utf-8',csv);
+  showToast('CSV baixado com provedores!','success');
 }
 
 async function exportKML() {
